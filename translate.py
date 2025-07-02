@@ -341,6 +341,7 @@ class TafsirTranslator:
                            input_file: str, 
                            output_file: str = None,
                            source_language: Optional[str] = None,
+                           target_language: str = "en",
                            output_format: str = 'txt') -> Dict:
         """
         Translate text from file with automatic language detection
@@ -359,7 +360,6 @@ class TafsirTranslator:
             # Save output
             if output_file:
                 output_path = Path(output_file)
-                
                 if output_format.lower() == 'json':
                     # Save as JSON
                     with open(output_path, 'w', encoding='utf-8') as f:
@@ -401,6 +401,7 @@ class TafsirTranslator:
                              input_folder: str, 
                              output_folder: str = None,
                              source_language: Optional[str] = None,
+                             target_language: str = "en",
                              file_pattern: str = "*.txt") -> Dict[str, Dict]:
         """
         Translate multiple files in a folder
@@ -416,14 +417,16 @@ class TafsirTranslator:
                 subdir_path = file_path
                 logger.info(f"Processing directory: {subdir_path.name}")
                 for text_file in subdir_path.glob(file_pattern):
+                    output_subdir = output_path / subdir_path.name
+                    output_subdir.mkdir(exist_ok=True)
                     logger.info(f"Processing file: {text_file.name}")
-                    output_file = output_path / f"{subdir_path.stem}" / f"{text_file.stem}.txt"
+                    output_file = output_subdir / f"{text_file.stem}_{target_language}.txt"
                     print(f"Output will be saved to: {output_file}")
                     result = self.translate_from_file(str(text_file), str(output_file), source_language)
                     results[text_file.name] = result
             else:
                 logger.info(f"Processing file: {file_path.name}")
-                output_file = output_path / f"{file_path.stem}.txt"
+                output_file = output_path / f"{file_path.stem}_{target_language}.txt"
                 logger.info(f"Output will be saved to: {output_file}")
                 result = self.translate_from_file(str(file_path), str(output_file), source_language)
                 
