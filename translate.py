@@ -113,7 +113,7 @@ class TafsirTranslator:
         text = re.sub(r'\s+', ' ', text.strip())
         
         if language in ['ar', 'ur']:
-            # Handle Arabic/Urdu/Persian punctuation
+            # Handle Arabic/Urdu punctuation
             text = re.sub(r'[«»]', '"', text)
             text = re.sub(r'[،]', ',', text)
             text = re.sub(r'[؛]', ';', text)
@@ -196,7 +196,7 @@ class TafsirTranslator:
         
         return chunks
     
-    def translate_chunk(self, text: str, source_lang: str, retry_count: int = 3) -> str:
+    def translate_chunk(self, text: str, source_lang: str, target_lang: str, retry_count: int = 3) -> str:
         """
         Translate a single chunk with retry logic
         """
@@ -207,7 +207,7 @@ class TafsirTranslator:
                     time.sleep(self.delay_between_requests * (attempt + 1))
                 
                 # Create translator instance for this chunk
-                translator = GoogleTranslator(source=source_lang, target=self.target_lang)
+                translator = GoogleTranslator(source=source_lang, target=target_lang)
                 
                 # Perform translation
                 result = translator.translate(text)
@@ -230,6 +230,7 @@ class TafsirTranslator:
     def translate_tafsir(self, 
                         input_text: str, 
                         source_language: Optional[str] = None,
+                        target_language: str = "en",
                         preserve_structure: bool = True) -> Dict[str, Union[str, int, List, float]]:
         """
         Main method to translate tafsir text with automatic language detection
@@ -264,7 +265,7 @@ class TafsirTranslator:
         for i, chunk in enumerate(chunks, 1):
             logger.info(f"Translating chunk {i}/{len(chunks)}...")
             
-            translated = self.translate_chunk(chunk, detected_lang)
+            translated = self.translate_chunk(chunk, detected_lang, target_language)
             translated_chunks.append(translated)
             
             if translated.startswith("[Translation failed"):
@@ -355,7 +356,7 @@ class TafsirTranslator:
             logger.info(f"Read {len(input_text)} characters from {input_file}")
             
             # Translate
-            result = self.translate_tafsir(input_text, source_language)
+            result = self.translate_tafsir(input_text, source_language, target_language)
             
             # Save output
             if output_file:
@@ -422,13 +423,13 @@ class TafsirTranslator:
                     logger.info(f"Processing file: {text_file.name}")
                     output_file = output_subdir / f"{text_file.stem}_{target_language}.txt"
                     print(f"Output will be saved to: {output_file}")
-                    result = self.translate_from_file(str(text_file), str(output_file), source_language)
+                    result = self.translate_from_file(str(text_file), str(output_file), source_language, target_language)
                     results[text_file.name] = result
             else:
                 logger.info(f"Processing file: {file_path.name}")
                 output_file = output_path / f"{file_path.stem}_{target_language}.txt"
                 logger.info(f"Output will be saved to: {output_file}")
-                result = self.translate_from_file(str(file_path), str(output_file), source_language)
+                result = self.translate_from_file(str(file_path), str(output_file), source_language, target_language)
                 
                 results[file_path.name] = result
         
