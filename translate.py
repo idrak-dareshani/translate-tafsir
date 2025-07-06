@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class TafsirTranslator:
-    def __init__(self, delay_between_requests: float = 1.0):
+    def __init__(self, delay_between_requests: float = 3.0):
         """
         Initialize the multi-language tafsir translator
         
