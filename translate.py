@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class TafsirTranslator:
-    def __init__(self, delay_between_requests: float = 3.0):
+    def __init__(self, delay_between_requests: float = 1.0):
         """
         Initialize the multi-language tafsir translator
         
@@ -56,6 +56,7 @@ class TafsirTranslator:
                 lang_name = self.supported_languages[detected_lang]
                 confidence = 0.9  # High confidence for supported languages
             else:
+                # Default to Arabic for unknown languages with Arabic script
                 if self._has_arabic_script(clean_text):
                     detected_lang = 'ar'
                     lang_name = 'Arabic'
@@ -113,7 +114,7 @@ class TafsirTranslator:
         text = re.sub(r'\s+', ' ', text.strip())
         
         if language in ['ar', 'ur']:
-            # Handle Arabic/Urdu punctuation
+            # Handle Arabic/Urdu/Persian punctuation
             text = re.sub(r'[«»]', '"', text)
             text = re.sub(r'[،]', ',', text)
             text = re.sub(r'[؛]', ';', text)
@@ -136,67 +137,88 @@ class TafsirTranslator:
                 
         return text
     
-    def split_text_intelligently(self, text: str, language: str, max_length: int = 3500) -> List[str]:
+    def split_text_intelligently(self, text: str, language: str, max_length: int = 3000) -> List[str]:
         """
-        Split text into chunks based on language-specific sentence boundaries
+        Split text into chunks prioritizing newlines, then by words, respecting max_length.
+        
+        Args:
+            text: The input text to split.
+            language: The detected language (used for sentence patterns, if applicable).
+            max_length: The maximum desired length for each chunk.
+                        Note: Google Translate's recommended max is 5000 chars,
+                        with advanced supporting up to 30000. 4000 is a safe middle ground.
+        
+        Returns:
+            A list of text chunks.
         """
-        if len(text) <= max_length:
-            return [text]
+        if not text:
+            return []
         
         chunks = []
         
-        # Split text into sentences using regex
-        # Language-specific sentence patterns
-        # if language in ['ar', 'ur']:
-        #     # Arabic/Urdu sentence markers
-        #     sentence_pattern = r'[.!?؟۔।]'
-        # else:
-        #     # Default English pattern
-        #     sentence_pattern = r'[.!?]'
-
-        #sentences = re.split(sentence_pattern, text)
-
-        # # Split text by words
-        # sentences = []
-        # chunk_size = max_length - 500
-        # for i in range(0, len(text), chunk_size):
-        #     sentences.append(text[i:i + chunk_size])
-
-        # Split sentences based on the words
-        words = text.split()
-        sentences = []
-
-        i = 0
-        while i < len(words):
-            sentence = []
-            while i < len(words) and len(' '.join(sentence + [words[i]])) <= 3000:
-                sentence.append(words[i])
-                i += 1
-            
-            if sentence:
-                sentences.append(' '.join(sentence))
-
-        current_chunk = ""
+        # 1. Split by newlines first to get logical blocks (paragraphs)
+        # Using re.split to keep the newlines for potential reconstruction if needed later,
+        # but for chunking, we process the actual text between newlines.
+        paragraph_splits = re.split(r'(\n+)', text)
         
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
+        current_chunk_buffer = [] # To build up chunks of words
+        current_chunk_length = 0
+
+        for i, segment in enumerate(paragraph_splits):
+            if not segment.strip(): # Skip empty segments or pure whitespace/newlines
+                # If it's a newline segment, consider it as a separator for chunks
+                if segment.strip() == '' and '\n' in segment:
+                    if current_chunk_buffer: # If there's content in the buffer, finalize it
+                        chunks.append(" ".join(current_chunk_buffer).strip())
+                        current_chunk_buffer = []
+                        current_chunk_length = 0
+                    # Add the newline itself as a "chunk" if we want to preserve exact spacing,
+                    # but typically we rejoin with " " or "\n\n" later.
+                    # For actual translation chunks, we don't send just newlines.
                 continue
+
+            # Process actual text content
+            words = segment.split(' ') # Simple word split, can be refined for other languages
+
+            for word in words:
+                word_len = len(word)
+                # Check if adding the next word (plus a space) exceeds max_length
+                # If current_chunk_buffer is empty, just add the word
+                # Otherwise, add word + space
+                
+                # Check if the current word itself is too long for a chunk (very rare, e.g., chemical names)
+                if word_len > max_length:
+                    logger.warning(f"Very long word ({word_len} chars) encountered, splitting it arbitrarily.")
+                    # Arbitrarily split the very long word
+                    # This is a fallback for extreme cases, not ideal for linguistic sense
+                    for j in range(0, word_len, max_length):
+                        if word[j:j+max_length]:
+                            chunks.append(word[j:j+max_length])
+                    current_chunk_buffer = [] # Reset buffer after handling oversized word
+                    current_chunk_length = 0
+                    continue # Move to next word
+
+                if current_chunk_buffer and (current_chunk_length + word_len + 1) > max_length: # +1 for space
+                    # Current word won't fit, so finalize the current buffer
+                    chunks.append(" ".join(current_chunk_buffer).strip())
+                    current_chunk_buffer = [word]
+                    current_chunk_length = word_len
+                else:
+                    # Add word to current buffer
+                    current_chunk_buffer.append(word)
+                    current_chunk_length += word_len + (1 if current_chunk_buffer else 0) # +1 for space if not first word
+
+        # Add any remaining text in the buffer
+        if current_chunk_buffer:
+            chunks.append(" ".join(current_chunk_buffer).strip())
             
-            potential_chunk = current_chunk + " " + sentence if current_chunk else sentence
-            
-            if len(potential_chunk) > max_length and current_chunk:
-                chunks.append(current_chunk.strip())
-                current_chunk = sentence
-            else:
-                current_chunk = potential_chunk
+        # Filter out any empty chunks that might result from splitting logic
+        chunks = [chunk for chunk in chunks if chunk]
         
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-        
+        logger.info(f"Text split into {len(chunks)} chunks using newline and word-based strategy.")
         return chunks
-    
-    def translate_chunk(self, text: str, source_lang: str, target_lang: str, retry_count: int = 3) -> str:
+        
+    def translate_chunk(self, text: str, source_lang: str, retry_count: int = 3) -> str:
         """
         Translate a single chunk with retry logic
         """
@@ -207,7 +229,7 @@ class TafsirTranslator:
                     time.sleep(self.delay_between_requests * (attempt + 1))
                 
                 # Create translator instance for this chunk
-                translator = GoogleTranslator(source=source_lang, target=target_lang)
+                translator = GoogleTranslator(source=source_lang, target=self.target_lang)
                 
                 # Perform translation
                 result = translator.translate(text)
@@ -230,7 +252,6 @@ class TafsirTranslator:
     def translate_tafsir(self, 
                         input_text: str, 
                         source_language: Optional[str] = None,
-                        target_language: str = "en",
                         preserve_structure: bool = True) -> Dict[str, Union[str, int, List, float]]:
         """
         Main method to translate tafsir text with automatic language detection
@@ -265,7 +286,7 @@ class TafsirTranslator:
         for i, chunk in enumerate(chunks, 1):
             logger.info(f"Translating chunk {i}/{len(chunks)}...")
             
-            translated = self.translate_chunk(chunk, detected_lang, target_language)
+            translated = self.translate_chunk(chunk, detected_lang)
             translated_chunks.append(translated)
             
             if translated.startswith("[Translation failed"):
@@ -338,11 +359,10 @@ class TafsirTranslator:
         
         return ''.join(processed_sentences).strip()
     
-    def translate_from_file(self, 
+    def translate_file(self, 
                            input_file: str, 
                            output_file: str = None,
                            source_language: Optional[str] = None,
-                           target_language: str = "en",
                            output_format: str = 'txt') -> Dict:
         """
         Translate text from file with automatic language detection
@@ -356,11 +376,12 @@ class TafsirTranslator:
             logger.info(f"Read {len(input_text)} characters from {input_file}")
             
             # Translate
-            result = self.translate_tafsir(input_text, source_language, target_language)
+            result = self.translate_tafsir(input_text, source_language)
             
             # Save output
             if output_file:
                 output_path = Path(output_file)
+                
                 if output_format.lower() == 'json':
                     # Save as JSON
                     with open(output_path, 'w', encoding='utf-8') as f:
@@ -368,27 +389,27 @@ class TafsirTranslator:
                 else:
                     # Save as formatted text
                     with open(output_path, 'w', encoding='utf-8') as f:
-                        #f.write("=" * 70 + "\n")
-                        #f.write("MULTI-LANGUAGE TAFSIR TRANSLATION\n")
-                        #f.write("=" * 70 + "\n\n")
+                        f.write("=" * 70 + "\n")
+                        f.write("MULTI-LANGUAGE TAFSIR TRANSLATION\n")
+                        f.write("=" * 70 + "\n\n")
                         
-                        #f.write(f"Source Language: {result['language_name']} ({result['detected_language']})\n")
-                        #f.write(f"Detection Confidence: {result['detection_confidence']:.2f}\n")
-                        #f.write(f"Translation Date: {result['translation_timestamp']}\n")
-                        #f.write(f"Success Rate: {result['success_rate']:.1f}%\n")
-                        #f.write(f"Total Chunks: {result['total_chunks']}\n\n")
+                        f.write(f"Source Language: {result['language_name']} ({result['detected_language']})\n")
+                        f.write(f"Detection Confidence: {result['detection_confidence']:.2f}\n")
+                        f.write(f"Translation Date: {result['translation_timestamp']}\n")
+                        f.write(f"Success Rate: {result['success_rate']:.1f}%\n")
+                        f.write(f"Total Chunks: {result['total_chunks']}\n\n")
                         
-                        #.write("ORIGINAL TEXT:\n")
-                        #f.write("-" * 40 + "\n")
-                        #f.write(result['original_text'])
-                        #f.write("\n\n")
+                        f.write("ORIGINAL TEXT:\n")
+                        f.write("-" * 40 + "\n")
+                        f.write(result['original_text'])
+                        f.write("\n\n")
                         
-                        #f.write("ENGLISH TRANSLATION:\n")
-                        #f.write("-" * 40 + "\n")
+                        f.write("ENGLISH TRANSLATION:\n")
+                        f.write("-" * 40 + "\n")
                         f.write(result['translated_text'])
                         
-                        #if result['failed_chunks']:
-                        #    f.write(f"\n\nFAILED CHUNKS: {result['failed_chunks']}\n")
+                        if result['failed_chunks']:
+                            f.write(f"\n\nFAILED CHUNKS: {result['failed_chunks']}\n")
                 
                 logger.info(f"Translation saved to {output_file}")
             
@@ -398,11 +419,9 @@ class TafsirTranslator:
             logger.error(f"File translation error: {str(e)}")
             return {'error': str(e)}
     
-    def batch_translate_files(self, 
+    def translate_files(self, 
                              input_folder: str, 
                              output_folder: str = None,
-                             source_language: Optional[str] = None,
-                             target_language: str = "en",
                              file_pattern: str = "*.txt") -> Dict[str, Dict]:
         """
         Translate multiple files in a folder
@@ -413,29 +432,13 @@ class TafsirTranslator:
         
         results = {}
         
-        for file_path in input_path.iterdir():
-            if file_path.is_dir():
-                subdir_path = file_path
-                logger.info(f"Processing directory: {subdir_path.name}")
-                for text_file in subdir_path.glob(file_pattern):
-                    output_lang = output_path / target_language
-                    output_lang.mkdir(exist_ok=True)
-                    output_subdir = output_lang / subdir_path.name
-                    output_subdir.mkdir(exist_ok=True)
-                    logger.info(f"Processing file: {text_file.name}")
-                    output_file = output_subdir / f"{text_file.stem}.txt"
-                    print(f"Output will be saved to: {output_file}")
-                    result = self.translate_from_file(str(text_file), str(output_file), source_language, target_language)
-                    results[text_file.name] = result
-            else:
-                logger.info(f"Processing file: {file_path.name}")
-                output_subdir = output_path / target_language
-                output_subdir.mkdir(exist_ok=True)
-                output_file = output_subdir / f"{file_path.stem}.txt"
-                logger.info(f"Output will be saved to: {output_file}")
-                result = self.translate_from_file(str(file_path), str(output_file), source_language, target_language)
-                
-                results[file_path.name] = result
+        for file_path in input_path.glob(file_pattern):
+            logger.info(f"Processing file: {file_path.name}")
+            
+            output_file = output_path / f"translated_{file_path.stem}.txt"
+            result = self.translate_file(str(file_path), str(output_file))
+            
+            results[file_path.name] = result
         
         # Save batch summary
         summary_file = output_path / "batch_translation_summary.json"
@@ -507,7 +510,7 @@ def main():
     with open('sample_tafsir.txt', 'w', encoding='utf-8') as f:
         f.write(arabic_sample + "\n\n" + urdu_sample)
     
-    file_result = translator.translate_from_file('sample_tafsir.txt', 'translated_output.txt')
+    file_result = translator.translate_file('sample_tafsir.txt', 'translated_output.txt')
     if 'error' not in file_result:
         print("✓ File translation completed!")
         print(f"✓ Detected: {file_result['language_name']}")
