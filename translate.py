@@ -5,6 +5,7 @@ A Python script to translate Arabic or Urdu Quranic commentary (tafsir) to Engli
 Automatically detects source language and translates using deep-translator
 """
 
+import uuid
 import time
 import re
 import logging
@@ -34,9 +35,106 @@ class TafsirTranslator:
             'ar': 'Arabic',
             'ur': 'Urdu'
         }
+        # Dictionary to store extracted Quranic verses and their placeholders
+        self.ayah_placeholders: Dict[str, str] = {}
+        self.placeholder_counter: int = 0
         
         logger.info("Multi-language Tafsir Translator initialized")
     
+    def _reset_state(self):
+        """Resets the ayah placeholder dictionary and counter for a new translation."""
+        self.ayah_placeholders = {}
+        self.placeholder_counter = 0
+
+    def _extract_and_replace_ayahs(self, text: str) -> str:
+        """
+        Extracts Quranic verses from the text and replaces them with unique placeholders.
+        Stores the original verses in self.ayah_placeholders.
+        """
+        # Regex to find text enclosed in "...", «...», or ﴾...﴿
+        # This pattern prioritizes Quranic brackets but also covers standard quotes.
+        # It's non-greedy to match the shortest possible string.
+        ayah_pattern = re.compile(r'["«﴾](.*?)[»﴿"]', re.DOTALL)
+        
+        def replace_match(match):
+            original_ayah = match.group(0)
+            #unique_id = str(uuid.uuid4()).replace('-', '')
+            placeholder = f"__{self.placeholder_counter}__"
+            self.ayah_placeholders[placeholder] = original_ayah
+            self.placeholder_counter += 1
+            logger.debug(f"Extracted ayah: '{original_ayah}' -> Placeholder: '{placeholder}'")
+            return placeholder
+        
+        processed_text = ayah_pattern.sub(replace_match, text)
+
+        logger.info(f"Ayahs extracted. Total placeholders created: {len(self.ayah_placeholders)}")
+        return processed_text
+
+    def _restore_ayahs(self, translated_text: str) -> str:
+        """
+        Restores the original Quranic verses into the translated text
+        by replacing placeholders.
+        """
+        restored_text = translated_text
+
+        sorted_placeholders = sorted(self.ayah_placeholders.items(), key=lambda item: len(item[0]), reverse=True)
+
+        for placeholder_key, original_ayah_text in sorted_placeholders:
+            # Extract the unique UUID and counter from the original placeholder key.
+            # Example: for "__UUID_COUNTER__", we need UUID and COUNTER.
+            # match_uuid_counter = re.search(r'__([0-9a-fA-F]{32})_(\d+)__', placeholder_key)
+            
+            # if not match_uuid_counter:
+            #     logger.warning(f"Unexpected placeholder key format in ayah_placeholders: '{placeholder_key}'. This placeholder will not be restored flexibly.")
+            #     # Fallback to direct replacement if UUID parsing fails for this placeholder.
+            restored_text = restored_text.replace(placeholder_key, original_ayah_text)
+            #     continue
+            
+            # unique_id = match_uuid_counter.group(1) # The 32-char UUID part (e.g., "03258141460745f2be2b31a6db8a8e18")
+            # counter_id = match_uuid_counter.group(2) # The counter part (e.g., "0", "1")
+
+            # full_uid_pattern = re.escape(unique_id)
+
+            # patterns = [full_uid_pattern]
+
+            # if len(unique_id) > 1:
+            #     # First character missing
+            #     patterns.append(re.escape(unique_id[1:]))
+                
+            # if len(unique_id) > 1:
+            #     # Last character missing
+            #     patterns.append(re.escape(unique_id[:-1]))
+                
+            # if len(unique_id) > 2:
+            #     # Both first and last character missing
+            #     patterns.append(re.escape(unique_id[1:-1]))
+
+            # # Combine all variations
+            # uid_variations_pattern = f"(?:{'|'.join(patterns)})"
+
+            # # The final flexible pattern string:
+            # flexible_pattern_str = (
+            #     r'__\s*' + # Start with __ and optional leading spaces
+            #     uid_variations_pattern + # Match either full or truncated UUID
+            #     r'\s*_\s*' + # Then optional spaces, underscore, optional spaces
+            #     re.escape(counter_id) + # Match the counter ID
+            #     r'\s*__' # Then optional spaces, double underscore
+            # )
+            
+            # flexible_pattern = re.compile(flexible_pattern_str, re.IGNORECASE)
+
+            # original_restored_text_before_sub = restored_text 
+            # restored_text = flexible_pattern.sub(original_ayah_text, restored_text)
+            
+            # if original_restored_text_before_sub != restored_text:
+            #     logger.info(f"Successfully restored ayah for placeholder: '{placeholder_key}'.")
+            # else:
+            #     logger.warning(f"Ayah placeholder '{placeholder_key}' (pattern: '{flexible_pattern.pattern}') not found/replaced in translated text.")
+            #     logger.debug(f"Translated text snippet where restoration was attempted (first 200 chars): '{translated_text[:200]}...'")
+
+        logger.info(f"Finished ayah restoration process.")
+        return restored_text
+
     def detect_language(self, text: str, confidence_threshold: float = 0.8) -> Tuple[str, float, str]:
         """
         Detect the source language of the text
@@ -56,7 +154,7 @@ class TafsirTranslator:
                 lang_name = self.supported_languages[detected_lang]
                 confidence = 0.9  # High confidence for supported languages
             else:
-                # Default to Arabic for unknown languages with Arabic script
+				# Default to Arabic for unknown languages with Arabic script
                 if self._has_arabic_script(clean_text):
                     detected_lang = 'ar'
                     lang_name = 'Arabic'
@@ -114,15 +212,11 @@ class TafsirTranslator:
         text = re.sub(r'\s+', ' ', text.strip())
         
         if language in ['ar', 'ur']:
-            # Handle Arabic/Urdu/Persian punctuation
+            # Handle Arabic/Urdu punctuation
             text = re.sub(r'[«»]', '"', text)
             text = re.sub(r'[،]', ',', text)
             text = re.sub(r'[؛]', ';', text)
             text = re.sub(r'[؟]', '?', text)
-            
-            # Handle Quranic verse markers
-            text = re.sub(r'[﴾﴿]', '', text)
-            text = re.sub(r'[۞]', '', text)  # Quranic markers
             
             # Convert Arabic-Indic numerals to Western numerals
             arabic_nums = '٠١٢٣٤٥٦٧٨٩'
@@ -160,7 +254,6 @@ class TafsirTranslator:
         # Using re.split to keep the newlines for potential reconstruction if needed later,
         # but for chunking, we process the actual text between newlines.
         paragraph_splits = re.split(r'(\n+)', text)
-        
         current_chunk_buffer = [] # To build up chunks of words
         current_chunk_length = 0
 
@@ -217,7 +310,7 @@ class TafsirTranslator:
         
         logger.info(f"Text split into {len(chunks)} chunks using newline and word-based strategy.")
         return chunks
-        
+
     def translate_chunk(self, text: str, source_lang: str, retry_count: int = 3) -> str:
         """
         Translate a single chunk with retry logic
@@ -254,7 +347,8 @@ class TafsirTranslator:
                         source_language: Optional[str] = None,
                         preserve_structure: bool = True) -> Dict[str, Union[str, int, List, float]]:
         """
-        Main method to translate tafsir text with automatic language detection
+        Main method to translate tafsir text with automatic language detection,
+		now preserving Quranic verses.
         
         Args:
             input_text: The text to translate
@@ -263,8 +357,16 @@ class TafsirTranslator:
         """
         logger.info("Starting tafsir translation with automatic language detection...")
         
+        # Reset placeholders for a new translation session
+        self._reset_state()
+
+        # Step 1: Extract Ayats and insert placeholders
+        text_with_placeholders = self._extract_and_replace_ayahs(input_text)
+        logger.info(f"Extracted {len(self.ayah_placeholders)} Quranic ayats and replaced with placeholders.")
+
         # Detect language if not specified
         if source_language is None:
+            # Use the original input_text for language detection to avoid issues with placeholders
             detected_lang, confidence, lang_name = self.detect_language(input_text)
         else:
             detected_lang = source_language
@@ -274,7 +376,7 @@ class TafsirTranslator:
         logger.info(f"Source language: {lang_name} ({detected_lang})")
         
         # Preprocess text
-        processed_text = self.preprocess_text(input_text, detected_lang)
+        processed_text = self.preprocess_text(text_with_placeholders, detected_lang)
         
         # Split into chunks
         chunks = self.split_text_intelligently(processed_text, detected_lang)
@@ -302,8 +404,10 @@ class TafsirTranslator:
         else:
             full_translation = "\n\n".join(translated_chunks)
         
+        # Step 2: Restore Ayats from placeholders
+        final_translation = self._restore_ayahs(full_translation)
         # Post-process translation
-        full_translation = self._post_process_translation(full_translation)
+        final_translation = self._post_process_translation(final_translation)
         
         # Calculate success metrics
         successful_chunks = len(chunks) - len(failed_chunks)
@@ -311,8 +415,8 @@ class TafsirTranslator:
         
         result = {
             'original_text': input_text,
-            'processed_text': processed_text,
-            'translated_text': full_translation,
+            'processed_text_with_placeholders': processed_text,
+            'translated_text': final_translation,
             'detected_language': detected_lang,
             'language_name': lang_name,
             'detection_confidence': confidence,
@@ -321,6 +425,7 @@ class TafsirTranslator:
             'failed_chunks': failed_chunks,
             'success_rate': success_rate,
             'translation_timestamp': datetime.now().isoformat(),
+			'ayah_preservation_details': self.ayah_placeholders,
             'chunks_detail': [
                 {
                     'chunk_id': i,
@@ -352,7 +457,9 @@ class TafsirTranslator:
             if i % 2 == 0 and sentence.strip():
                 sentence = sentence.strip()
                 if sentence:
-                    sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
+                    # Check if the sentence starts with an ayah to avoid capitalizing it
+                    if not any(sentence.startswith(ayah[:10]) for ayah in self.ayah_placeholders.values()): # Simple check
+                        sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
                 processed_sentences.append(sentence)
             else:
                 processed_sentences.append(sentence)
@@ -398,7 +505,7 @@ class TafsirTranslator:
                         f.write(f"Translation Date: {result['translation_timestamp']}\n")
                         f.write(f"Success Rate: {result['success_rate']:.1f}%\n")
                         f.write(f"Total Chunks: {result['total_chunks']}\n\n")
-                        
+                        f.write(f"Ayahs Preserved: {len(result['ayah_preservation_details'])}\n\n")
                         f.write("ORIGINAL TEXT:\n")
                         f.write("-" * 40 + "\n")
                         f.write(result['original_text'])
@@ -460,74 +567,84 @@ def main():
     """
     
     urdu_sample = """
-    اللہ تعالیٰ نے فرمایا: "اور ہم نے تمہیں تمام جہانوں کے لیے رحمت بنا کر بھیجا ہے"۔ یہ آیت کریمہ اس بات کو 
+    اللہ تعالیٰ نے فرمایا: ﴿وَمَا أَرْسَلْنَاكَ إِلَّا رَحْمَةً لِلْعَالَمِينَ﴾ (الأنبياء: 107). یہ آیت کریمہ اس بات کو 
     واضح کرتی ہے کہ حضرت محمد صلی اللہ علیہ وسلم کو تمام عالمین کے لیے رحمت بنا کر بھیجا گیا ہے۔ آپ کی 
-    تعلیمات تمام انسانیت کے لیے ہیں اور ہر دور میں قابل عمل ہیں۔
+    تعلیمات تمام انسانیت کے لیے ہیں اور ہر دور میں قابل عمل ہیں۔ مزید یہ کہ اس میں قرآن کے اعجاز کا بھی ذکر ہے۔
     """
     
+    # Another Arabic example with multiple ayahs and different delimiters
+    arabic_sample_2 = """
+    المثال الأول: قال تعالى في سورة البقرة: "ذَلِكَ الْكِتَابُ لَا رَيْبَ فِيهِ هُدًى لِلْمُتَّقِينَ". 
+    هذه الآية تؤكد على أن القرآن كتاب لا شك فيه وأنه هداية للمتقين. والمثال الثاني: 
+    ﴿بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ﴾. هذه البسملة المباركة هي مفتاح كل خير. 
+    كذلك جاء في سورة الإخلاص: "قُلْ هُوَ اللَّهُ أَحَدٌ". وهذا يدل على توحيد الله سبحانه.
+    """
+
     print("=== MULTI-LANGUAGE TAFSIR TRANSLATOR ===\n")
-    
     translator = TafsirTranslator()
     
-    # Example 1: Arabic Translation with Auto-Detection
-    print("1. Arabic Text Translation (Auto-Detection):")
+    # # Example 1: Arabic Translation with Auto-Detection
+    # print("1. Arabic Text Translation (Auto-Detection):")
+    # print("-" * 60)
+    
+    # arabic_result = translator.translate_tafsir(arabic_sample)
+    # print(f"Detected Language: {arabic_result['language_name']} ({arabic_result['detected_language']})")
+    # print(f"Detection Confidence: {arabic_result['detection_confidence']:.2f}")
+    # print(f"Success Rate: {arabic_result['success_rate']:.1f}%")
+    # print(f"Ayahs Preserved: {len(arabic_result['ayah_preservation_details'])}")
+    # print("\nTranslation:")
+    # print(arabic_result['translated_text'])
+    
+    # # Example 2: Urdu Translation with Auto-Detection
+    # print("\n" + "="*70)
+    # print("2. Urdu Text Translation (Auto-Detection):")
+    # print("-" * 60)
+    
+    # urdu_result = translator.translate_tafsir(urdu_sample)
+    # print(f"Detected Language: {urdu_result['language_name']} ({urdu_result['detected_language']})")
+    # print(f"Detection Confidence: {urdu_result['detection_confidence']:.2f}")
+    # print(f"Success Rate: {urdu_result['success_rate']:.1f}%")
+    # print(f"Ayahs Preserved: {len(urdu_result['ayah_preservation_details'])}")
+    # print("\nTranslation:")
+    # print(urdu_result['translated_text'])
+
+    # Example 3: Arabic Text with multiple Ayahs and mixed delimiters
+    print("\n" + "="*70)
+    print("3. Arabic Text with Multiple Ayahs (Auto-Detection, Ayat Preserved):")
     print("-" * 60)
     
-    arabic_result = translator.translate_tafsir(arabic_sample)
-    print(f"Detected Language: {arabic_result['language_name']} ({arabic_result['detected_language']})")
-    print(f"Detection Confidence: {arabic_result['detection_confidence']:.2f}")
-    print(f"Success Rate: {arabic_result['success_rate']:.1f}%")
+    arabic_result_2 = translator.translate_tafsir(arabic_sample_2)
+    print(f"Detected Language: {arabic_result_2['language_name']} ({arabic_result_2['detected_language']})")
+    print(f"Detection Confidence: {arabic_result_2['detection_confidence']:.2f}")
+    print(f"Success Rate: {arabic_result_2['success_rate']:.1f}%")
+    print(f"Ayahs Preserved: {len(arabic_result_2['ayah_preservation_details'])}")
     print("\nTranslation:")
-    print(arabic_result['translated_text'])
+    print(arabic_result_2['translated_text'])
     
-    # Example 2: Urdu Translation with Auto-Detection
-    print("\n" + "="*70)
-    print("2. Urdu Text Translation (Auto-Detection):")
-    print("-" * 60)
+    # # Example 4: File Translation
+    # print("\n" + "="*70)
+    # print("4. File Translation Example:")
+    # print("-" * 60)
     
-    urdu_result = translator.translate_tafsir(urdu_sample)
-    print(f"Detected Language: {urdu_result['language_name']} ({urdu_result['detected_language']})")
-    print(f"Detection Confidence: {urdu_result['detection_confidence']:.2f}")
-    print(f"Success Rate: {urdu_result['success_rate']:.1f}%")
-    print("\nTranslation:")
-    print(urdu_result['translated_text'])
+    # # Save sample to file
+    # with open('sample_tafsir.txt', 'w', encoding='utf-8') as f:
+    #     f.write(arabic_sample + "\n\n" + urdu_sample + "\n\n" + arabic_sample_2)
     
-    # Example 3: Manual Language Specification
-    print("\n" + "="*70)
-    print("3. Manual Language Specification:")
-    print("-" * 60)
+    # file_result = translator.translate_file('sample_tafsir.txt', 'translated_output.txt')
+    # if 'error' not in file_result:
+    #     print("✓ File translation completed!")
+    #     print(f"✓ Detected: {file_result['language_name']}")
+    #     print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
+    #     print(f"✓ Ayahs Preserved: {len(file_result['ayah_preservation_details'])}")
+    #     print("✓ Output saved to: translated_output.txt")
     
-    manual_result = translator.translate_tafsir(arabic_sample, source_language='ar')
-    print(f"Manually set language: {manual_result['language_name']}")
-    print("This is useful when auto-detection might be uncertain.")
-    
-    # Example 4: File Translation
-    print("\n" + "="*70)
-    print("4. File Translation Example:")
-    print("-" * 60)
-    
-    # Save sample to file
-    with open('sample_tafsir.txt', 'w', encoding='utf-8') as f:
-        f.write(arabic_sample + "\n\n" + urdu_sample)
-    
-    file_result = translator.translate_file('sample_tafsir.txt', 'translated_output.txt')
-    if 'error' not in file_result:
-        print("✓ File translation completed!")
-        print(f"✓ Detected: {file_result['language_name']}")
-        print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
-        print("✓ Output saved to: translated_output.txt")
-    
-    print("\n" + "="*70)
-    print("USAGE TIPS:")
-    print("- The translator automatically detects Arabic or Urdu")
-    print("- You can manually specify language with source_language='ar' or 'ur'")
-    print("- Large texts are automatically chunked for better processing")
-    print("- Failed chunks are logged and can be retried individually")
+    # print("\n" + "="*70)
+    # print("USAGE TIPS:")
+    # print("- The translator automatically detects Arabic or Urdu")
+    # print("- You can manually specify language with source_language='ar' or 'ur'")
+    # print("- Large texts are automatically chunked for better processing")
+    # print("- Failed chunks are logged and can be retried individually")
+    # print("- Crucially, Quranic Ayats within quotes/brackets are now preserved!")
 
 if __name__ == "__main__":
-    print("REQUIRED PACKAGES:")
-    print("pip install deep-translator")
-    print("=" * 50)
-    print()
-    
     main()

@@ -1,0 +1,36 @@
+======================================================================
+MULTI-LANGUAGE TAFSIR TRANSLATION
+======================================================================
+
+Source Language: Arabic (default) (ar)
+Detection Confidence: 0.50
+Translation Date: 2025-07-20T18:43:13.326023
+Success Rate: 100.0%
+Total Chunks: 1
+
+Ayahs Preserved: 4
+
+ORIGINAL TEXT:
+----------------------------------------
+
+    قال الله تعالى: "وما أرسلناك إلا رحمة للعالمين". هذه الآية الكريمة تبين أن النبي محمد صلى الله عليه وسلم 
+    قد أرسل رحمة للعالمين جميعاً، فرسالته عامة لجميع الناس في كل زمان ومكان. وهذا يدل على عظمة هذا الدين 
+    وشموليته لجميع جوانب الحياة.
+    
+
+
+    اللہ تعالیٰ نے فرمایا: ﴿وَمَا أَرْسَلْنَاكَ إِلَّا رَحْمَةً لِلْعَالَمِينَ﴾ (الأنبياء: 107). یہ آیت کریمہ اس بات کو 
+    واضح کرتی ہے کہ حضرت محمد صلی اللہ علیہ وسلم کو تمام عالمین کے لیے رحمت بنا کر بھیجا گیا ہے۔ آپ کی 
+    تعلیمات تمام انسانیت کے لیے ہیں اور ہر دور میں قابل عمل ہیں۔ مزید یہ کہ اس میں قرآن کے اعجاز کا بھی ذکر ہے۔
+    
+
+
+    المثال الأول: قال تعالى في سورة البقرة: "ذَلِكَ الْكِتَابُ لَا رَيْبَ فِيهِ هُدًى لِلْمُتَّقِينَ". 
+    هذه الآية تؤكد على أن القرآن كتاب لا شك فيه وأنه هداية للمتقين. والمثال الثاني: 
+    ﴿بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ﴾. هذه البسملة المباركة هي مفتاح كل خير. 
+    كذلك جاء في سورة الإخلاص: "قُلْ هُوَ اللَّهُ أَحَدٌ". وهذا يدل على توحيد الله سبحانه.
+    
+
+ENGLISH TRANSLATION:
+----------------------------------------
+God Almighty said: "وما أرسلناك إلا رحمة للعالمين".This noble verse shows that the Prophet Muhammad, may God bless him and grant him peace, sent mercy to all worlds, so his general message to all people in every time and place.This indicates the greatness and comprehensiveness of this religion for all aspects of life.May God bless you:﴿ And we have not sent you except a mercy to the world He is God.”This indicates the unification of God Almighty.
