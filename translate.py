@@ -5,7 +5,6 @@ A Python script to translate Arabic or Urdu Quranic commentary (tafsir) to Engli
 Automatically detects source language and translates using deep-translator
 """
 
-import uuid
 import time
 import re
 import logging
@@ -15,7 +14,7 @@ import json
 from datetime import datetime
 
 # Deep-translator imports
-from deep_translator import GoogleTranslator, single_detection, batch_detection
+from deep_translator import GoogleTranslator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -80,129 +79,10 @@ class TafsirTranslator:
         sorted_placeholders = sorted(self.ayah_placeholders.items(), key=lambda item: len(item[0]), reverse=True)
 
         for placeholder_key, original_ayah_text in sorted_placeholders:
-            # Extract the unique UUID and counter from the original placeholder key.
-            # Example: for "__UUID_COUNTER__", we need UUID and COUNTER.
-            # match_uuid_counter = re.search(r'__([0-9a-fA-F]{32})_(\d+)__', placeholder_key)
-            
-            # if not match_uuid_counter:
-            #     logger.warning(f"Unexpected placeholder key format in ayah_placeholders: '{placeholder_key}'. This placeholder will not be restored flexibly.")
-            #     # Fallback to direct replacement if UUID parsing fails for this placeholder.
             restored_text = restored_text.replace(placeholder_key, original_ayah_text)
-            #     continue
-            
-            # unique_id = match_uuid_counter.group(1) # The 32-char UUID part (e.g., "03258141460745f2be2b31a6db8a8e18")
-            # counter_id = match_uuid_counter.group(2) # The counter part (e.g., "0", "1")
-
-            # full_uid_pattern = re.escape(unique_id)
-
-            # patterns = [full_uid_pattern]
-
-            # if len(unique_id) > 1:
-            #     # First character missing
-            #     patterns.append(re.escape(unique_id[1:]))
-                
-            # if len(unique_id) > 1:
-            #     # Last character missing
-            #     patterns.append(re.escape(unique_id[:-1]))
-                
-            # if len(unique_id) > 2:
-            #     # Both first and last character missing
-            #     patterns.append(re.escape(unique_id[1:-1]))
-
-            # # Combine all variations
-            # uid_variations_pattern = f"(?:{'|'.join(patterns)})"
-
-            # # The final flexible pattern string:
-            # flexible_pattern_str = (
-            #     r'__\s*' + # Start with __ and optional leading spaces
-            #     uid_variations_pattern + # Match either full or truncated UUID
-            #     r'\s*_\s*' + # Then optional spaces, underscore, optional spaces
-            #     re.escape(counter_id) + # Match the counter ID
-            #     r'\s*__' # Then optional spaces, double underscore
-            # )
-            
-            # flexible_pattern = re.compile(flexible_pattern_str, re.IGNORECASE)
-
-            # original_restored_text_before_sub = restored_text 
-            # restored_text = flexible_pattern.sub(original_ayah_text, restored_text)
-            
-            # if original_restored_text_before_sub != restored_text:
-            #     logger.info(f"Successfully restored ayah for placeholder: '{placeholder_key}'.")
-            # else:
-            #     logger.warning(f"Ayah placeholder '{placeholder_key}' (pattern: '{flexible_pattern.pattern}') not found/replaced in translated text.")
-            #     logger.debug(f"Translated text snippet where restoration was attempted (first 200 chars): '{translated_text[:200]}...'")
 
         logger.info(f"Finished ayah restoration process.")
         return restored_text
-
-    def detect_language(self, text: str, confidence_threshold: float = 0.8) -> Tuple[str, float, str]:
-        """
-        Detect the source language of the text
-        
-        Returns:
-            Tuple of (language_code, confidence, language_name)
-        """
-        try:
-            # Clean text for better detection
-            clean_text = self._clean_text_for_detection(text)
-            
-            # Use single detection for better accuracy
-            detected_lang = single_detection(clean_text, api_key=None)
-            
-            # Map detected language
-            if detected_lang in self.supported_languages:
-                lang_name = self.supported_languages[detected_lang]
-                confidence = 0.9  # High confidence for supported languages
-            else:
-				# Default to Arabic for unknown languages with Arabic script
-                if self._has_arabic_script(clean_text):
-                    detected_lang = 'ar'
-                    lang_name = 'Arabic'
-                    confidence = 0.6
-                elif self._has_urdu_script(clean_text):
-                    detected_lang = 'ur'
-                    lang_name = 'Urdu'
-                    confidence = 0.6
-                else:
-                    detected_lang = 'ar'  # Default fallback
-                    lang_name = 'Arabic (fallback)'
-                    confidence = 0.3
-            
-            logger.info(f"Detected language: {lang_name} ({detected_lang}) with confidence: {confidence:.2f}")
-            return detected_lang, confidence, lang_name
-            
-        except Exception as e:
-            logger.warning(f"Language detection failed: {str(e)}. Defaulting to Arabic.")
-            return 'ar', 0.5, 'Arabic (default)'
-    
-    def _clean_text_for_detection(self, text: str) -> str:
-        """Clean text to improve language detection accuracy"""
-        # Take a sample from the middle of the text for better detection
-        text_length = len(text)
-        if text_length > 1000:
-            start = text_length // 4
-            end = start + 500
-            text = text[start:end]
-        
-        # Remove excessive punctuation and numbers
-        text = re.sub(r'[0-9]+', '', text)
-        text = re.sub(r'[^\w\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]', ' ', text)
-        text = re.sub(r'\s+', ' ', text.strip())
-        
-        return text
-    
-    def _has_arabic_script(self, text: str) -> bool:
-        """Check if text contains Arabic script characters"""
-        arabic_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]')
-        arabic_chars = len(arabic_pattern.findall(text))
-        total_chars = len(re.findall(r'\w', text))
-        return arabic_chars > total_chars * 0.3 if total_chars > 0 else False
-    
-    def _has_urdu_script(self, text: str) -> bool:
-        """Check if text contains Urdu-specific characters"""
-        # Urdu uses additional characters beyond basic Arabic
-        urdu_specific = re.compile(r'[\u0679\u067E\u0686\u0688\u0691\u06BA\u06BE\u06C1\u06C3\u06CC\u06D2]')
-        return len(urdu_specific.findall(text)) > 0
     
     def preprocess_text(self, text: str, language: str) -> str:
         """
@@ -346,15 +226,15 @@ class TafsirTranslator:
                         source_language: str = "ar",
                         preserve_structure: bool = True) -> Dict[str, Union[str, int, List, float]]:
         """
-        Main method to translate tafsir text with automatic language detection,
+        Main method to translate tafsir text,
 		now preserving Quranic verses.
         
         Args:
             input_text: The text to translate
-            source_language: Optional manual language specification (ar/ur)
+            source_language: manual language specification (ar/ur)
             preserve_structure: Whether to preserve text structure
         """
-        logger.info("Starting tafsir translation with automatic language detection...")
+        logger.info("Starting tafsir translation...")
         
         # Reset placeholders for a new translation session
         self._reset_state()
@@ -363,11 +243,6 @@ class TafsirTranslator:
         text_with_placeholders = self._extract_and_replace_ayahs(input_text)
         logger.info(f"Extracted {len(self.ayah_placeholders)} Quranic ayats and replaced with placeholders.")
 
-        # # Detect language if not specified
-        # if source_language is None:
-        #     # Use the original input_text for language detection to avoid issues with placeholders
-        #     detected_lang, confidence, lang_name = self.detect_language(input_text)
-        # else:
         detected_lang = source_language
         confidence = 0.6
         lang_name = self.supported_languages.get(source_language, source_language)
@@ -459,19 +334,6 @@ class TafsirTranslator:
         sentences = re.split(r'([.!?]+)', text)
         processed_sentences = []
 
-        # Old logic        
-        # for i, sentence in enumerate(sentences):
-        #     if i % 2 == 0 and sentence.strip():
-        #         sentence = sentence.strip()
-        #         if sentence:
-        #             # Check if the sentence starts with an ayah to avoid capitalizing it
-        #             if not any(sentence.startswith(ayah[:10]) for ayah in self.ayah_placeholders.values()): # Simple check
-        #                 sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
-        #         processed_sentences.append(sentence)
-        #     else:
-        #         processed_sentences.append(sentence)
-
-        # New logic
         for i in range(0, len(sentences), 2):
             sentence = sentences[i].strip() if i < len(sentences) else ''
             punctuation = sentences[i + 1] if i + 1 < len(sentences) else ''
@@ -494,7 +356,8 @@ class TafsirTranslator:
                            input_file: str, 
                            output_file: str,
                            source_language: str = "ar",
-                           output_format: str = 'txt') -> Dict:
+                           output_format: str = 'txt',
+                           save_only_text: bool = False) -> Dict:
         """
         Translate text from file with automatic language detection
         """
@@ -517,6 +380,10 @@ class TafsirTranslator:
                     # Save as JSON
                     with open(output_path, 'w', encoding='utf-8') as f:
                         json.dump(result, f, ensure_ascii=False, indent=2)
+                elif save_only_text:
+                    # Save only text
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(result['translated_text'])
                 else:
                     # Save as formatted text
                     with open(output_path, 'w', encoding='utf-8') as f:
@@ -609,7 +476,7 @@ def main():
     translator = TafsirTranslator()
     
     # Example 1: Arabic Translation with Auto-Detection
-    print("1. Arabic Text Translation (Auto-Detection):")
+    print("1. Arabic Text Translation:")
     print("-" * 60)
     
     arabic_result = translator.translate_tafsir(arabic_sample)
@@ -622,7 +489,7 @@ def main():
     
     # Example 2: Urdu Translation with Auto-Detection
     print("\n" + "="*70)
-    print("2. Urdu Text Translation (Auto-Detection):")
+    print("2. Urdu Text Translation:")
     print("-" * 60)
     
     urdu_result = translator.translate_tafsir(urdu_sample, "ur")
@@ -635,7 +502,7 @@ def main():
 
     # Example 3: Arabic Text with multiple Ayahs and mixed delimiters
     print("\n" + "="*70)
-    print("3. Arabic Text with Multiple Ayahs (Auto-Detection, Ayat Preserved):")
+    print("3. Arabic Text with Multiple Ayahs:")
     print("-" * 60)
     
     arabic_result_2 = translator.translate_tafsir(arabic_sample_2)
@@ -648,7 +515,7 @@ def main():
     
     # Example 4: File Translation (Arabic)
     print("\n" + "="*70)
-    print("4. File Translation Example:")
+    print("4. File Translation Example (Arabic):")
     print("-" * 60)
     
     # Save sample to file
@@ -665,7 +532,7 @@ def main():
 
     # Example 5: File Translation (Urdu)
     print("\n" + "="*70)
-    print("4. File Translation Example:")
+    print("4. File Translation Example (Urdu):")
     print("-" * 60)
     
     # Save sample to file
@@ -678,7 +545,7 @@ def main():
         print(f"✓ Detected: {file_result['language_name']}")
         print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
         print(f"✓ Ayahs Preserved: {len(file_result['ayah_preservation_details'])}")
-        print("✓ Output saved to: translated_output.txt")
+        print("✓ Output saved to: translated_output_ur.txt")
 
     # print("\n" + "="*70)
     # print("USAGE TIPS:")
