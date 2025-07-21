@@ -29,10 +29,13 @@ class TafsirTranslator:
             delay_between_requests: Delay between API calls to respect rate limits
         """
         self.delay_between_requests = delay_between_requests
-        self.target_lang = 'en'  # English
         self.supported_languages = {
             'ar': 'Arabic',
-            'ur': 'Urdu'
+            'ur': 'Urdu',
+            'en': 'English',
+            'fr': 'French',
+            'de': 'German',
+            'es': 'Spanish'
         }
         # Dictionary to store extracted Quranic verses and their placeholders
         self.ayah_placeholders: Dict[str, str] = {}
@@ -86,7 +89,7 @@ class TafsirTranslator:
     
     def preprocess_text(self, text: str, language: str) -> str:
         """
-        Preprocess text based on detected language
+        Preprocess text
         """
         # Remove extra whitespaces
         text = re.sub(r'\s+', ' ', text.strip())
@@ -111,13 +114,12 @@ class TafsirTranslator:
                 
         return text
     
-    def split_text_intelligently(self, text: str, language: str, max_length: int = 3000) -> List[str]:
+    def split_text_intelligently(self, text: str, max_length: int = 3000) -> List[str]:
         """
         Split text into chunks prioritizing newlines, then by words, respecting max_length.
         
         Args:
             text: The input text to split.
-            language: The detected language (used for sentence patterns, if applicable).
             max_length: The maximum desired length for each chunk.
                         Note: Google Translate's recommended max is 5000 chars,
                         with advanced supporting up to 30000. 4000 is a safe middle ground.
@@ -190,7 +192,7 @@ class TafsirTranslator:
         
         return chunks
 
-    def translate_chunk(self, text: str, source_lang: str, retry_count: int = 3) -> str:
+    def translate_chunk(self, text: str, source_lang: str, target_lang: str, retry_count: int = 3) -> str:
         """
         Translate a single chunk with retry logic
         """
@@ -201,7 +203,7 @@ class TafsirTranslator:
                     time.sleep(self.delay_between_requests * (attempt + 1))
                 
                 # Create translator instance for this chunk
-                translator = GoogleTranslator(source=source_lang, target=self.target_lang)
+                translator = GoogleTranslator(source=source_lang, target=target_lang)
                 
                 # Perform translation
                 result = translator.translate(text)
@@ -224,6 +226,7 @@ class TafsirTranslator:
     def translate_tafsir(self, 
                         input_text: str, 
                         source_language: str = "ar",
+                        target_language: str = "en",
                         preserve_structure: bool = True) -> Dict[str, Union[str, int, List, float]]:
         """
         Main method to translate tafsir text,
@@ -243,17 +246,17 @@ class TafsirTranslator:
         text_with_placeholders = self._extract_and_replace_ayahs(input_text)
         logger.info(f"Extracted {len(self.ayah_placeholders)} Quranic ayats and replaced with placeholders.")
 
-        detected_lang = source_language
-        confidence = 0.6
-        lang_name = self.supported_languages.get(source_language, source_language)
+        source_lang_name = self.supported_languages.get(source_language, source_language)
+        target_lang_name = self.supported_languages.get(target_language, target_language)
         
-        logger.info(f"Source language: {lang_name} ({detected_lang})")
+        logger.info(f"Source language: {source_lang_name} ({source_language})")
+        logger.info(f"Target language: {target_lang_name} ({target_language})")
         
         # Preprocess text
-        processed_text = self.preprocess_text(text_with_placeholders, detected_lang)
+        processed_text = self.preprocess_text(text_with_placeholders, source_language)
         
         # Split into chunks
-        chunks = self.split_text_intelligently(processed_text, detected_lang)
+        chunks = self.split_text_intelligently(processed_text)
         logger.info(f"Text split into {len(chunks)} chunks")
         
         translated_chunks = []
@@ -262,7 +265,7 @@ class TafsirTranslator:
         for i, chunk in enumerate(chunks, 1):
             logger.info(f"Translating chunk {i}/{len(chunks)}...")
             
-            translated = self.translate_chunk(chunk, detected_lang)
+            translated = self.translate_chunk(chunk, source_language, target_language)
             translated_chunks.append(translated)
             
             if translated.startswith("[Translation failed"):
@@ -291,9 +294,8 @@ class TafsirTranslator:
             'original_text': input_text,
             'processed_text_with_placeholders': processed_text,
             'translated_text': final_translation,
-            'detected_language': detected_lang,
-            'language_name': lang_name,
-            'detection_confidence': confidence,
+            'source_language_name': source_lang_name,
+            'target_language_name': target_lang_name,
             'total_chunks': len(chunks),
             'successful_chunks': successful_chunks,
             'failed_chunks': failed_chunks,
@@ -355,9 +357,10 @@ class TafsirTranslator:
     def translate_file(self, 
                            input_file: str, 
                            output_file: str,
-                           source_language: str = "ar",
+                           source_language: str = 'ar',
+                           target_language: str = 'en',
                            output_format: str = 'txt',
-                           save_only_text: bool = False) -> Dict:
+                           formatted: bool = False) -> Dict:
         """
         Translate text from file with automatic language detection
         """
@@ -370,7 +373,7 @@ class TafsirTranslator:
             logger.info(f"Read {len(input_text)} characters from {input_file}")
             
             # Translate
-            result = self.translate_tafsir(input_text, source_language)
+            result = self.translate_tafsir(input_text, source_language, target_language)
             
             # Save output
             if output_file:
@@ -380,19 +383,15 @@ class TafsirTranslator:
                     # Save as JSON
                     with open(output_path, 'w', encoding='utf-8') as f:
                         json.dump(result, f, ensure_ascii=False, indent=2)
-                elif save_only_text:
-                    # Save only text
-                    with open(output_path, 'w', encoding='utf-8') as f:
-                        f.write(result['translated_text'])
-                else:
+                elif formatted:
                     # Save as formatted text
                     with open(output_path, 'w', encoding='utf-8') as f:
                         f.write("=" * 70 + "\n")
                         f.write("MULTI-LANGUAGE TAFSIR TRANSLATION\n")
                         f.write("=" * 70 + "\n\n")
                         
-                        f.write(f"Source Language: {result['language_name']} ({result['detected_language']})\n")
-                        f.write(f"Detection Confidence: {result['detection_confidence']:.2f}\n")
+                        f.write(f"Source Language: {result['source_language_name']}\n")
+                        f.write(f"Target Language: {result['target_language_name']}\n")
                         f.write(f"Translation Date: {result['translation_timestamp']}\n")
                         f.write(f"Success Rate: {result['success_rate']:.1f}%\n")
                         f.write(f"Total Chunks: {result['total_chunks']}\n\n")
@@ -408,6 +407,10 @@ class TafsirTranslator:
                         
                         if result['failed_chunks']:
                             f.write(f"\n\nFAILED CHUNKS: {result['failed_chunks']}\n")
+                else:
+                    # Save only text
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(result['translated_text'])
                 
                 logger.info(f"Translation saved to {output_file}")
             
@@ -420,7 +423,8 @@ class TafsirTranslator:
     def translate_files(self, 
                              input_folder: str, 
                              output_folder: str,
-                             source_language: str = "ar",
+                             source_language: str = 'ar',
+                             target_language: str = 'en',
                              file_pattern: str = "*.txt") -> Dict[str, Dict]:
         """
         Translate multiple files in a folder
@@ -435,7 +439,7 @@ class TafsirTranslator:
             logger.info(f"Processing file: {file_path.name}")
             
             output_file = output_path / f"translated_{file_path.stem}.txt"
-            result = self.translate_file(str(file_path), str(output_file), source_language)
+            result = self.translate_file(str(file_path), str(output_file), source_language, target_language)
             
             results[file_path.name] = result
         
@@ -480,8 +484,8 @@ def main():
     print("-" * 60)
     
     arabic_result = translator.translate_tafsir(arabic_sample)
-    print(f"Detected Language: {arabic_result['language_name']} ({arabic_result['detected_language']})")
-    print(f"Detection Confidence: {arabic_result['detection_confidence']:.2f}")
+    print(f"Source Language: {arabic_result['source_language_name']}")
+    print(f"Target Language: {arabic_result['target_language_name']}")
     print(f"Success Rate: {arabic_result['success_rate']:.1f}%")
     print(f"Ayahs Preserved: {len(arabic_result['ayah_preservation_details'])}")
     print("\nTranslation:")
@@ -493,8 +497,8 @@ def main():
     print("-" * 60)
     
     urdu_result = translator.translate_tafsir(urdu_sample, "ur")
-    print(f"Detected Language: {urdu_result['language_name']} ({urdu_result['detected_language']})")
-    print(f"Detection Confidence: {urdu_result['detection_confidence']:.2f}")
+    print(f"Source Language: {urdu_result['source_language_name']}")
+    print(f"Target Language: {urdu_result['target_language_name']}")
     print(f"Success Rate: {urdu_result['success_rate']:.1f}%")
     print(f"Ayahs Preserved: {len(urdu_result['ayah_preservation_details'])}")
     print("\nTranslation:")
@@ -506,8 +510,8 @@ def main():
     print("-" * 60)
     
     arabic_result_2 = translator.translate_tafsir(arabic_sample_2)
-    print(f"Detected Language: {arabic_result_2['language_name']} ({arabic_result_2['detected_language']})")
-    print(f"Detection Confidence: {arabic_result_2['detection_confidence']:.2f}")
+    print(f"Source Language: {arabic_result_2['source_language_name']}")
+    print(f"Target Language: {arabic_result_2['target_language_name']}")
     print(f"Success Rate: {arabic_result_2['success_rate']:.1f}%")
     print(f"Ayahs Preserved: {len(arabic_result_2['ayah_preservation_details'])}")
     print("\nTranslation:")
@@ -522,10 +526,11 @@ def main():
     with open('sample_tafsir.txt', 'w', encoding='utf-8') as f:
         f.write(arabic_sample + "\n\n" + arabic_sample_2)
     
-    file_result = translator.translate_file('sample_tafsir.txt', 'translated_output.txt')
+    file_result = translator.translate_file('sample_tafsir.txt', 'translated_output.txt', formatted=True)
     if 'error' not in file_result:
         print("✓ File translation completed!")
-        print(f"✓ Detected: {file_result['language_name']}")
+        print(f"✓ Source Language: {file_result['source_language_name']}")
+        print(f"✓ Target Language: {file_result['target_language_name']}")
         print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
         print(f"✓ Ayahs Preserved: {len(file_result['ayah_preservation_details'])}")
         print("✓ Output saved to: translated_output.txt")
@@ -539,10 +544,11 @@ def main():
     with open('sample_tafsir_ur.txt', 'w', encoding='utf-8') as f:
         f.write(urdu_sample + "\n\n")
     
-    file_result = translator.translate_file('sample_tafsir_ur.txt', 'translated_output_ur.txt', 'ur')
+    file_result = translator.translate_file('sample_tafsir_ur.txt', 'translated_output_ur.txt', 'ur', formatted=True)
     if 'error' not in file_result:
         print("✓ File translation completed!")
-        print(f"✓ Detected: {file_result['language_name']}")
+        print(f"✓ Source: {file_result['source_language_name']}")
+        print(f"✓ Target: {file_result['target_language_name']}")
         print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
         print(f"✓ Ayahs Preserved: {len(file_result['ayah_preservation_details'])}")
         print("✓ Output saved to: translated_output_ur.txt")

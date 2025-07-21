@@ -2,9 +2,9 @@
 MULTI-LANGUAGE TAFSIR TRANSLATION
 ======================================================================
 
-Source Language: Arabic (ar)
-Detection Confidence: 0.60
-Translation Date: 2025-07-21T11:44:37.328314
+Source Language: Arabic
+Target Language: English
+Translation Date: 2025-07-21T12:29:42.786694
 Success Rate: 100.0%
 Total Chunks: 1
 

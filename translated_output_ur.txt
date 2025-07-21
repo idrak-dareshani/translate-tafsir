@@ -2,9 +2,9 @@
 MULTI-LANGUAGE TAFSIR TRANSLATION
 ======================================================================
 
-Source Language: Urdu (ur)
-Detection Confidence: 0.60
-Translation Date: 2025-07-21T11:44:38.738103
+Source Language: Urdu
+Target Language: English
+Translation Date: 2025-07-21T12:29:44.236378
 Success Rate: 100.0%
 Total Chunks: 1
 
