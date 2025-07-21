@@ -54,12 +54,12 @@ class TafsirTranslator:
         # Regex to find text enclosed in "...", «...», or ﴾...﴿
         # This pattern prioritizes Quranic brackets but also covers standard quotes.
         # It's non-greedy to match the shortest possible string.
-        ayah_pattern = re.compile(r'["«﴾](.*?)[»﴿"]', re.DOTALL)
+        ayah_pattern = re.compile(r'["«﴿](.*?)[»﴾"]', re.DOTALL)
         
         def replace_match(match):
             original_ayah = match.group(0)
             #unique_id = str(uuid.uuid4()).replace('-', '')
-            placeholder = f"__{self.placeholder_counter}__"
+            placeholder = f"[{self.placeholder_counter}]"
             self.ayah_placeholders[placeholder] = original_ayah
             self.placeholder_counter += 1
             logger.debug(f"Extracted ayah: '{original_ayah}' -> Placeholder: '{placeholder}'")
@@ -308,7 +308,6 @@ class TafsirTranslator:
         # Filter out any empty chunks that might result from splitting logic
         chunks = [chunk for chunk in chunks if chunk]
         
-        logger.info(f"Text split into {len(chunks)} chunks using newline and word-based strategy.")
         return chunks
 
     def translate_chunk(self, text: str, source_lang: str, retry_count: int = 3) -> str:
@@ -344,7 +343,7 @@ class TafsirTranslator:
     
     def translate_tafsir(self, 
                         input_text: str, 
-                        source_language: Optional[str] = None,
+                        source_language: str = "ar",
                         preserve_structure: bool = True) -> Dict[str, Union[str, int, List, float]]:
         """
         Main method to translate tafsir text with automatic language detection,
@@ -364,14 +363,14 @@ class TafsirTranslator:
         text_with_placeholders = self._extract_and_replace_ayahs(input_text)
         logger.info(f"Extracted {len(self.ayah_placeholders)} Quranic ayats and replaced with placeholders.")
 
-        # Detect language if not specified
-        if source_language is None:
-            # Use the original input_text for language detection to avoid issues with placeholders
-            detected_lang, confidence, lang_name = self.detect_language(input_text)
-        else:
-            detected_lang = source_language
-            confidence = 1.0
-            lang_name = self.supported_languages.get(source_language, source_language)
+        # # Detect language if not specified
+        # if source_language is None:
+        #     # Use the original input_text for language detection to avoid issues with placeholders
+        #     detected_lang, confidence, lang_name = self.detect_language(input_text)
+        # else:
+        detected_lang = source_language
+        confidence = 0.6
+        lang_name = self.supported_languages.get(source_language, source_language)
         
         logger.info(f"Source language: {lang_name} ({detected_lang})")
         
@@ -445,31 +444,56 @@ class TafsirTranslator:
         # Remove extra spaces
         text = re.sub(r'\s+', ' ', text)
         
-        # Fix punctuation spacing
+        # Fix punctuation spacing - remove spaces before punctuation
         text = re.sub(r'\s+([.!?,:;])', r'\1', text)
+
+        # Handle hyphens specifically - remove extra spaces around hyphens but keep single spaces
+        text = re.sub(r'\s+-\s+', '-', text)  # Remove spaces around hyphens
+        text = re.sub(r'(\w)\s+-', r'\1-', text)  # Remove space before hyphen after word
+        text = re.sub(r'-\s+(\w)', r'-\1', text)  # Remove space after hyphen before word
+            
+        # Ensure proper spacing after sentence-ending punctuation
         text = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', text)
         
         # Capitalize sentences
         sentences = re.split(r'([.!?]+)', text)
         processed_sentences = []
-        
-        for i, sentence in enumerate(sentences):
-            if i % 2 == 0 and sentence.strip():
-                sentence = sentence.strip()
-                if sentence:
-                    # Check if the sentence starts with an ayah to avoid capitalizing it
-                    if not any(sentence.startswith(ayah[:10]) for ayah in self.ayah_placeholders.values()): # Simple check
-                        sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
+
+        # Old logic        
+        # for i, sentence in enumerate(sentences):
+        #     if i % 2 == 0 and sentence.strip():
+        #         sentence = sentence.strip()
+        #         if sentence:
+        #             # Check if the sentence starts with an ayah to avoid capitalizing it
+        #             if not any(sentence.startswith(ayah[:10]) for ayah in self.ayah_placeholders.values()): # Simple check
+        #                 sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
+        #         processed_sentences.append(sentence)
+        #     else:
+        #         processed_sentences.append(sentence)
+
+        # New logic
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i].strip() if i < len(sentences) else ''
+            punctuation = sentences[i + 1] if i + 1 < len(sentences) else ''
+
+            if sentence:
+                # Check if the sentence starts with an ayah to avoid capitalizing it
+                if not any(sentence.startswith(ayah[:10]) for ayah in self.ayah_placeholders.values()):
+                    sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
+
                 processed_sentences.append(sentence)
-            else:
-                processed_sentences.append(sentence)
+                if punctuation:
+                    processed_sentences.append(punctuation)
+                    # Add space after punctuation if there's more content
+                    if i + 2 < len(sentences) and sentences[i + 2].strip():
+                        processed_sentences.append(' ')
         
         return ''.join(processed_sentences).strip()
     
     def translate_file(self, 
                            input_file: str, 
-                           output_file: str = None,
-                           source_language: Optional[str] = None,
+                           output_file: str,
+                           source_language: str = "ar",
                            output_format: str = 'txt') -> Dict:
         """
         Translate text from file with automatic language detection
@@ -528,7 +552,8 @@ class TafsirTranslator:
     
     def translate_files(self, 
                              input_folder: str, 
-                             output_folder: str = None,
+                             output_folder: str,
+                             source_language: str = "ar",
                              file_pattern: str = "*.txt") -> Dict[str, Dict]:
         """
         Translate multiple files in a folder
@@ -543,7 +568,7 @@ class TafsirTranslator:
             logger.info(f"Processing file: {file_path.name}")
             
             output_file = output_path / f"translated_{file_path.stem}.txt"
-            result = self.translate_file(str(file_path), str(output_file))
+            result = self.translate_file(str(file_path), str(output_file), source_language)
             
             results[file_path.name] = result
         
@@ -576,37 +601,37 @@ def main():
     arabic_sample_2 = """
     المثال الأول: قال تعالى في سورة البقرة: "ذَلِكَ الْكِتَابُ لَا رَيْبَ فِيهِ هُدًى لِلْمُتَّقِينَ". 
     هذه الآية تؤكد على أن القرآن كتاب لا شك فيه وأنه هداية للمتقين. والمثال الثاني: 
-    ﴿بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ﴾. هذه البسملة المباركة هي مفتاح كل خير. 
+    ﴿بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ﴾. هذه البسملة المباركة هي مفتاح كل خير 
     كذلك جاء في سورة الإخلاص: "قُلْ هُوَ اللَّهُ أَحَدٌ". وهذا يدل على توحيد الله سبحانه.
     """
 
     print("=== MULTI-LANGUAGE TAFSIR TRANSLATOR ===\n")
     translator = TafsirTranslator()
     
-    # # Example 1: Arabic Translation with Auto-Detection
-    # print("1. Arabic Text Translation (Auto-Detection):")
-    # print("-" * 60)
+    # Example 1: Arabic Translation with Auto-Detection
+    print("1. Arabic Text Translation (Auto-Detection):")
+    print("-" * 60)
     
-    # arabic_result = translator.translate_tafsir(arabic_sample)
-    # print(f"Detected Language: {arabic_result['language_name']} ({arabic_result['detected_language']})")
-    # print(f"Detection Confidence: {arabic_result['detection_confidence']:.2f}")
-    # print(f"Success Rate: {arabic_result['success_rate']:.1f}%")
-    # print(f"Ayahs Preserved: {len(arabic_result['ayah_preservation_details'])}")
-    # print("\nTranslation:")
-    # print(arabic_result['translated_text'])
+    arabic_result = translator.translate_tafsir(arabic_sample)
+    print(f"Detected Language: {arabic_result['language_name']} ({arabic_result['detected_language']})")
+    print(f"Detection Confidence: {arabic_result['detection_confidence']:.2f}")
+    print(f"Success Rate: {arabic_result['success_rate']:.1f}%")
+    print(f"Ayahs Preserved: {len(arabic_result['ayah_preservation_details'])}")
+    print("\nTranslation:")
+    print(arabic_result['translated_text'])
     
-    # # Example 2: Urdu Translation with Auto-Detection
-    # print("\n" + "="*70)
-    # print("2. Urdu Text Translation (Auto-Detection):")
-    # print("-" * 60)
+    # Example 2: Urdu Translation with Auto-Detection
+    print("\n" + "="*70)
+    print("2. Urdu Text Translation (Auto-Detection):")
+    print("-" * 60)
     
-    # urdu_result = translator.translate_tafsir(urdu_sample)
-    # print(f"Detected Language: {urdu_result['language_name']} ({urdu_result['detected_language']})")
-    # print(f"Detection Confidence: {urdu_result['detection_confidence']:.2f}")
-    # print(f"Success Rate: {urdu_result['success_rate']:.1f}%")
-    # print(f"Ayahs Preserved: {len(urdu_result['ayah_preservation_details'])}")
-    # print("\nTranslation:")
-    # print(urdu_result['translated_text'])
+    urdu_result = translator.translate_tafsir(urdu_sample, "ur")
+    print(f"Detected Language: {urdu_result['language_name']} ({urdu_result['detected_language']})")
+    print(f"Detection Confidence: {urdu_result['detection_confidence']:.2f}")
+    print(f"Success Rate: {urdu_result['success_rate']:.1f}%")
+    print(f"Ayahs Preserved: {len(urdu_result['ayah_preservation_details'])}")
+    print("\nTranslation:")
+    print(urdu_result['translated_text'])
 
     # Example 3: Arabic Text with multiple Ayahs and mixed delimiters
     print("\n" + "="*70)
@@ -621,23 +646,40 @@ def main():
     print("\nTranslation:")
     print(arabic_result_2['translated_text'])
     
-    # # Example 4: File Translation
-    # print("\n" + "="*70)
-    # print("4. File Translation Example:")
-    # print("-" * 60)
+    # Example 4: File Translation (Arabic)
+    print("\n" + "="*70)
+    print("4. File Translation Example:")
+    print("-" * 60)
     
-    # # Save sample to file
-    # with open('sample_tafsir.txt', 'w', encoding='utf-8') as f:
-    #     f.write(arabic_sample + "\n\n" + urdu_sample + "\n\n" + arabic_sample_2)
+    # Save sample to file
+    with open('sample_tafsir.txt', 'w', encoding='utf-8') as f:
+        f.write(arabic_sample + "\n\n" + arabic_sample_2)
     
-    # file_result = translator.translate_file('sample_tafsir.txt', 'translated_output.txt')
-    # if 'error' not in file_result:
-    #     print("✓ File translation completed!")
-    #     print(f"✓ Detected: {file_result['language_name']}")
-    #     print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
-    #     print(f"✓ Ayahs Preserved: {len(file_result['ayah_preservation_details'])}")
-    #     print("✓ Output saved to: translated_output.txt")
+    file_result = translator.translate_file('sample_tafsir.txt', 'translated_output.txt')
+    if 'error' not in file_result:
+        print("✓ File translation completed!")
+        print(f"✓ Detected: {file_result['language_name']}")
+        print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
+        print(f"✓ Ayahs Preserved: {len(file_result['ayah_preservation_details'])}")
+        print("✓ Output saved to: translated_output.txt")
+
+    # Example 5: File Translation (Urdu)
+    print("\n" + "="*70)
+    print("4. File Translation Example:")
+    print("-" * 60)
     
+    # Save sample to file
+    with open('sample_tafsir_ur.txt', 'w', encoding='utf-8') as f:
+        f.write(urdu_sample + "\n\n")
+    
+    file_result = translator.translate_file('sample_tafsir_ur.txt', 'translated_output_ur.txt', 'ur')
+    if 'error' not in file_result:
+        print("✓ File translation completed!")
+        print(f"✓ Detected: {file_result['language_name']}")
+        print(f"✓ Success rate: {file_result['success_rate']:.1f}%")
+        print(f"✓ Ayahs Preserved: {len(file_result['ayah_preservation_details'])}")
+        print("✓ Output saved to: translated_output.txt")
+
     # print("\n" + "="*70)
     # print("USAGE TIPS:")
     # print("- The translator automatically detects Arabic or Urdu")

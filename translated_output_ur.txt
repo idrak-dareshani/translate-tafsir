@@ -1,0 +1,25 @@
+======================================================================
+MULTI-LANGUAGE TAFSIR TRANSLATION
+======================================================================
+
+Source Language: Urdu (ur)
+Detection Confidence: 0.60
+Translation Date: 2025-07-21T11:30:04.343843
+Success Rate: 100.0%
+Total Chunks: 1
+
+Ayahs Preserved: 1
+
+ORIGINAL TEXT:
+----------------------------------------
+
+    اللہ تعالیٰ نے فرمایا: ﴿وَمَا أَرْسَلْنَاكَ إِلَّا رَحْمَةً لِلْعَالَمِينَ﴾ (الأنبياء: 107). یہ آیت کریمہ اس بات کو 
+    واضح کرتی ہے کہ حضرت محمد صلی اللہ علیہ وسلم کو تمام عالمین کے لیے رحمت بنا کر بھیجا گیا ہے۔ آپ کی 
+    تعلیمات تمام انسانیت کے لیے ہیں اور ہر دور میں قابل عمل ہیں۔ مزید یہ کہ اس میں قرآن کے اعجاز کا بھی ذکر ہے۔
+    
+
+
+
+ENGLISH TRANSLATION:
+----------------------------------------
+Allaah says: ﴿وَمَا أَرْسَلْنَاكَ إِلَّا رَحْمَةً لِلْعَالَمِينَ﴾ (Al-Nabi'a: 107). This verse makes it clear that Prophet Muhammad (peace be upon him) has been sent as a mercy to all the worlds. Your teachings are for all humanity and are viable in every age. Moreover, it also mentions the honor of the Qur'an.
